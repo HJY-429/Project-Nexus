@@ -11,7 +11,7 @@ import os
 import tempfile
 from pathlib import Path
 from tools.orchestrator import PipelineOrchestrator
-from .api_integration import PipelineAPIIntegration
+from tools.api_integration import PipelineAPIIntegration
 
 # Create some demo files
 def create_demo_files():

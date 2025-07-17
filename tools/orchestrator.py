@@ -28,9 +28,15 @@ class PipelineOrchestrator:
         
         # Define standard pipelines using tool keys
         self.standard_pipelines = {
+            # Knowledge graph pipelines
             "single_doc_existing_topic": ["etl", "graph_build"],
             "batch_doc_existing_topic": ["etl", "blueprint_gen", "graph_build"],
-            "new_topic_batch": ["etl", "blueprint_gen", "graph_build"]
+            "new_topic_batch": ["etl", "blueprint_gen", "graph_build"],
+            "text_to_graph": ["graph_build"],
+            
+            # Memory pipelines
+            "memory_direct_graph": ["graph_build"],  # Direct graph extraction from dialogue
+            "memory_single": ["graph_build"]  # Single memory processing
         }
         
         # Tool key to name mapping
@@ -143,28 +149,45 @@ class PipelineOrchestrator:
                 duration_seconds=duration
             )
     
-    def select_default_pipeline(self, target_type: str, topic_name: str, file_count: int, is_new_topic: bool) -> str:
+    def select_default_pipeline(self, target_type: str, topic_name: str, file_count: int, is_new_topic: bool, 
+                              input_type: str = "document", file_extension: str = None) -> str:
         """
         Select appropriate default pipeline based on context.
         
         Args:
-            target_type: Target type (knowledge_graph, etc.)
+            target_type: Target type (knowledge_graph, personal_memory)
             topic_name: Topic name
             file_count: Number of files to process
             is_new_topic: Whether this is a new topic
+            input_type: Type of input (document, dialogue, text)
+            file_extension: File extension for document processing
             
         Returns:
             Name of the default pipeline to use
         """
-        if target_type != "knowledge_graph":
-            return "single_doc_existing_topic"  # Default fallback
         
-        if file_count == 1 and not is_new_topic:
-            return "single_doc_existing_topic"
-        elif file_count > 1 and not is_new_topic:
-            return "batch_doc_existing_topic"
-        else:  # New topic or single file for new topic
-            return "new_topic_batch"
+        # Memory pipeline for dialogue history/chat
+        if target_type == "personal_memory" or input_type == "dialogue":
+            if input_type == "dialogue":
+                return "memory_direct_graph"  # Direct graph extraction from dialogue
+            else:
+                return "memory_single"  # Single memory processing
+        
+        # Knowledge graph pipeline for documents
+        if target_type == "knowledge_graph":
+            # Document processing pipeline
+            if input_type == "document":
+                if is_new_topic:
+                    return "new_topic_batch"
+                elif file_count == 1:
+                    return "single_doc_existing_topic"
+                else:
+                    return "batch_doc_existing_topic"
+            elif input_type == "text":
+                return "text_to_graph"  # Direct text processing
+        
+        # Default fallback
+        return "single_doc_existing_topic"
     
     def _prepare_tool_input(self, tool_name: str, context: Dict[str, Any], 
                            previous_results: Dict[str, ToolResult]) -> Dict[str, Any]:
@@ -304,5 +327,13 @@ class PipelineOrchestrator:
         file_count = len(request_data.get("files", []))
         is_new_topic = metadata.get("is_new_topic", False)
         
-        pipeline_name = self.select_default_pipeline(target_type, topic_name, file_count, is_new_topic)
+        # Determine input type and context
+        input_type = "dialogue" if target_type == "personal_memory" else "document"
+        if isinstance(request_data.get("input"), str) and not request_data.get("files"):
+            input_type = "text"
+        
+        pipeline_name = self.select_default_pipeline(
+            target_type, topic_name, file_count, is_new_topic, 
+            input_type=input_type
+        )
         return self.execute_pipeline(pipeline_name, request_data, execution_id)
