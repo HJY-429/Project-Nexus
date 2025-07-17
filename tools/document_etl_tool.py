@@ -50,6 +50,10 @@ class DocumentETLTool(BaseTool):
     @property
     def tool_name(self) -> str:
         return "DocumentETLTool"
+        
+    @property
+    def tool_key(self) -> str:
+        return "etl"
     
     @property
     def tool_description(self) -> str:
