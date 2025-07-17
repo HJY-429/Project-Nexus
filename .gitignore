@@ -1,0 +1,11 @@
+__pycache__
+docs/
+.venv/
+.env
+uploads/
+test.py
+*.log
+.DS_Store
+*.json
+*.pkl
+*_dev.ipynb
