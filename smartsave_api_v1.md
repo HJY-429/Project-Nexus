@@ -25,6 +25,7 @@ POST /api/save
 
 ### Request Parameters
 
+```json
 Field	          Type	          Required	          Description
 input	    string or object	       No	      Raw content such as natural language, markdown, HTML, or structured JSON.
 file	    file or string	         No	      File upload or file path/URL. Supports PDF, DOCX, TXT, etc.
@@ -38,7 +39,7 @@ pipeline_hint	string or array	     No	      Suggested downstream processing step
 llm_hint	    string	             No	      Instruction to LLM about how to interpret or summarize the input.
 sync	        boolean	             No	      If true, waits for processing (recommended only for small payloads).
 callback_url	string	             No	    Optional webhook URL that will be called when processing is complete.
-
+```
 ---
 
 ### Example Requests
