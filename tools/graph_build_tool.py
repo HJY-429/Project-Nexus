@@ -61,7 +61,11 @@ class GraphBuildTool(BaseTool):
 
     @property
     def tool_name(self) -> str:
-        return "Graph Build Tool"
+        return "GraphBuildTool"
+        
+    @property
+    def tool_key(self) -> str:
+        return "graph_build"
 
     @property
     def tool_description(self) -> str:

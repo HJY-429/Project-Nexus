@@ -80,6 +80,11 @@ class BaseTool(ABC):
     def tool_name(self) -> str:
         """Human-readable name of the tool."""
         pass
+        
+    @property
+    def tool_key(self) -> str:
+        """Short key identifier for pipeline configuration."""
+        return self.tool_name.lower().replace("tool", "").replace(" ", "_")
     
     @property
     @abstractmethod

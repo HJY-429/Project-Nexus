@@ -66,6 +66,10 @@ class BlueprintGenerationTool(BaseTool):
     @property
     def tool_name(self) -> str:
         return "BlueprintGenerationTool"
+        
+    @property
+    def tool_key(self) -> str:
+        return "blueprint_gen"
 
     @property
     def tool_description(self) -> str:
