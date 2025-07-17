@@ -26,11 +26,18 @@ class PipelineOrchestrator:
         self.session_factory = session_factory or SessionLocal
         self.logger = logging.getLogger(__name__)
         
-        # Define standard pipelines
+        # Define standard pipelines using tool keys
         self.standard_pipelines = {
-            "single_doc_existing_topic": ["DocumentETLTool", "GraphBuildTool"],
-            "batch_doc_existing_topic": ["DocumentETLTool", "BlueprintGenerationTool", "GraphBuildTool"],
-            "new_topic_batch": ["DocumentETLTool", "BlueprintGenerationTool", "GraphBuildTool"]
+            "single_doc_existing_topic": ["etl", "graph_build"],
+            "batch_doc_existing_topic": ["etl", "blueprint_gen", "graph_build"],
+            "new_topic_batch": ["etl", "blueprint_gen", "graph_build"]
+        }
+        
+        # Tool key to name mapping
+        self.tool_key_mapping = {
+            "etl": "DocumentETLTool",
+            "blueprint_gen": "BlueprintGenerationTool", 
+            "graph_build": "GraphBuildTool"
         }
     
     def execute_pipeline(self, pipeline_name: str, context: Dict[str, Any], execution_id: Optional[str] = None) -> ToolResult:
@@ -53,7 +60,8 @@ class PipelineOrchestrator:
                 error_message=f"Pipeline '{pipeline_name}' not found"
             )
         
-        tools = self.standard_pipelines[pipeline_name]
+        tool_keys = self.standard_pipelines[pipeline_name]
+        tools = [self.tool_key_mapping[key] for key in tool_keys]
         return self.execute_custom_pipeline(tools, context, execution_id)
     
     def execute_custom_pipeline(self, tools: List[str], context: Dict[str, Any], execution_id: Optional[str] = None) -> ToolResult:
@@ -162,7 +170,14 @@ class PipelineOrchestrator:
                            previous_results: Dict[str, ToolResult]) -> Dict[str, Any]:
         """Prepare input for a specific tool based on context and previous results."""
         
-        if tool_name == "DocumentETLTool":
+        # Map tool names to keys for consistent handling
+        tool_key = None
+        for key, name in self.tool_key_mapping.items():
+            if name == tool_name:
+                tool_key = key
+                break
+        
+        if tool_key == "etl":
             return {
                 "file_path": context.get("file_path"),
                 "topic_name": context.get("topic_name"),
@@ -172,7 +187,7 @@ class PipelineOrchestrator:
                 "original_filename": context.get("original_filename")
             }
         
-        elif tool_name == "BlueprintGenerationTool":
+        elif tool_key == "blueprint_gen":
             return {
                 "topic_name": context.get("topic_name"),
                 "source_data_ids": context.get("source_data_ids"),
@@ -181,17 +196,22 @@ class PipelineOrchestrator:
                 "embedding_func": context.get("embedding_func")
             }
         
-        elif tool_name == "GraphBuildTool":
+        elif tool_key == "graph_build":
             # Use results from previous tools
-            if "DocumentETLTool" in previous_results:
-                etl_result = previous_results["DocumentETLTool"]
-                source_data_id = etl_result.data.get("source_data_id")
+            source_data_id = None
+            blueprint_id = None
+            
+            # Check for results from DocumentETLTool
+            etl_tool_name = self.tool_key_mapping.get("etl")
+            if etl_tool_name and etl_tool_name in previous_results:
+                source_data_id = previous_results[etl_tool_name].data.get("source_data_id")
             else:
                 source_data_id = context.get("source_data_id")
             
-            if "BlueprintGenerationTool" in previous_results:
-                blueprint_result = previous_results["BlueprintGenerationTool"]
-                blueprint_id = blueprint_result.data.get("blueprint_id")
+            # Check for results from BlueprintGenerationTool
+            blueprint_tool_name = self.tool_key_mapping.get("blueprint_gen")
+            if blueprint_tool_name and blueprint_tool_name in previous_results:
+                blueprint_id = previous_results[blueprint_tool_name].data.get("blueprint_id")
             else:
                 blueprint_id = context.get("blueprint_id")
             
@@ -209,11 +229,18 @@ class PipelineOrchestrator:
         """Update context with results from a tool."""
         updated_context = context.copy()
         
-        if tool_name == "DocumentETLTool" and result.success:
+        # Map tool name to key
+        tool_key = None
+        for key, name in self.tool_key_mapping.items():
+            if name == tool_name:
+                tool_key = key
+                break
+        
+        if tool_key == "etl" and result.success:
             updated_context["source_data_id"] = result.data.get("source_data_id")
             updated_context["topic_name"] = result.metadata.get("topic_name")
         
-        elif tool_name == "BlueprintGenerationTool" and result.success:
+        elif tool_key == "blueprint_gen" and result.success:
             updated_context["blueprint_id"] = result.data.get("blueprint_id")
             updated_context["topic_name"] = result.metadata.get("topic_name")
         
@@ -248,3 +275,34 @@ class PipelineOrchestrator:
             context, 
             execution_id
         )
+    
+    def execute_with_process_strategy(self, request_data: Dict[str, Any], execution_id: Optional[str] = None) -> ToolResult:
+        """
+        Execute pipeline based on process strategy parameter from API request.
+        
+        Args:
+            request_data: API request data containing process_strategy (But process_strategy may not exist)
+            execution_id: Optional execution ID
+            
+        Returns:
+            ToolResult with execution results
+        """
+        execution_id = execution_id or str(uuid.uuid4())
+        
+        process_strategy = request_data.get("process_strategy", {})
+        target_type = request_data.get("target_type", "knowledge_graph")
+        metadata = request_data.get("metadata", {})
+        
+        # Explicit pipeline execution
+        if "pipeline" in process_strategy:
+            pipeline = process_strategy["pipeline"]
+            tools = [self.tool_key_mapping.get(tool_key, tool_key) for tool_key in pipeline]
+            return self.execute_custom_pipeline(tools, request_data, execution_id)
+        
+        # Default pipeline selection
+        topic_name = metadata.get("topic_name")
+        file_count = len(request_data.get("files", []))
+        is_new_topic = metadata.get("is_new_topic", False)
+        
+        pipeline_name = self.select_default_pipeline(target_type, topic_name, file_count, is_new_topic)
+        return self.execute_pipeline(pipeline_name, request_data, execution_id)
