@@ -26,11 +26,24 @@ class PipelineOrchestrator:
         self.session_factory = session_factory or SessionLocal
         self.logger = logging.getLogger(__name__)
         
-        # Define standard pipelines
+        # Define standard pipelines using tool keys
         self.standard_pipelines = {
-            "single_doc_existing_topic": ["DocumentETLTool", "GraphBuildTool"],
-            "batch_doc_existing_topic": ["DocumentETLTool", "BlueprintGenerationTool", "GraphBuildTool"],
-            "new_topic_batch": ["DocumentETLTool", "BlueprintGenerationTool", "GraphBuildTool"]
+            # Knowledge graph pipelines
+            "single_doc_existing_topic": ["etl", "graph_build"],
+            "batch_doc_existing_topic": ["etl", "blueprint_gen", "graph_build"],
+            "new_topic_batch": ["etl", "blueprint_gen", "graph_build"],
+            "text_to_graph": ["graph_build"],
+            
+            # Memory pipelines
+            "memory_direct_graph": ["graph_build"],  # Direct graph extraction from dialogue
+            "memory_single": ["graph_build"]  # Single memory processing
+        }
+        
+        # Tool key to name mapping
+        self.tool_key_mapping = {
+            "etl": "DocumentETLTool",
+            "blueprint_gen": "BlueprintGenerationTool", 
+            "graph_build": "GraphBuildTool"
         }
     
     def execute_pipeline(self, pipeline_name: str, context: Dict[str, Any], execution_id: Optional[str] = None) -> ToolResult:
@@ -53,7 +66,8 @@ class PipelineOrchestrator:
                 error_message=f"Pipeline '{pipeline_name}' not found"
             )
         
-        tools = self.standard_pipelines[pipeline_name]
+        tool_keys = self.standard_pipelines[pipeline_name]
+        tools = [self.tool_key_mapping[key] for key in tool_keys]
         return self.execute_custom_pipeline(tools, context, execution_id)
     
     def execute_custom_pipeline(self, tools: List[str], context: Dict[str, Any], execution_id: Optional[str] = None) -> ToolResult:
@@ -135,34 +149,58 @@ class PipelineOrchestrator:
                 duration_seconds=duration
             )
     
-    def select_default_pipeline(self, target_type: str, topic_name: str, file_count: int, is_new_topic: bool) -> str:
+    def select_default_pipeline(self, target_type: str, topic_name: str, file_count: int, is_new_topic: bool, 
+                              input_type: str = "document", file_extension: str = None) -> str:
         """
         Select appropriate default pipeline based on context.
         
         Args:
-            target_type: Target type (knowledge_graph, etc.)
+            target_type: Target type (knowledge_graph, personal_memory)
             topic_name: Topic name
             file_count: Number of files to process
             is_new_topic: Whether this is a new topic
+            input_type: Type of input (document, dialogue, text)
+            file_extension: File extension for document processing
             
         Returns:
             Name of the default pipeline to use
         """
-        if target_type != "knowledge_graph":
-            return "single_doc_existing_topic"  # Default fallback
         
-        if file_count == 1 and not is_new_topic:
-            return "single_doc_existing_topic"
-        elif file_count > 1 and not is_new_topic:
-            return "batch_doc_existing_topic"
-        else:  # New topic or single file for new topic
-            return "new_topic_batch"
+        # Memory pipeline for dialogue history/chat
+        if target_type == "personal_memory" or input_type == "dialogue":
+            if input_type == "dialogue":
+                return "memory_direct_graph"  # Direct graph extraction from dialogue
+            else:
+                return "memory_single"  # Single memory processing
+        
+        # Knowledge graph pipeline for documents
+        if target_type == "knowledge_graph":
+            # Document processing pipeline
+            if input_type == "document":
+                if is_new_topic:
+                    return "new_topic_batch"
+                elif file_count == 1:
+                    return "single_doc_existing_topic"
+                else:
+                    return "batch_doc_existing_topic"
+            elif input_type == "text":
+                return "text_to_graph"  # Direct text processing
+        
+        # Default fallback
+        return "single_doc_existing_topic"
     
     def _prepare_tool_input(self, tool_name: str, context: Dict[str, Any], 
                            previous_results: Dict[str, ToolResult]) -> Dict[str, Any]:
         """Prepare input for a specific tool based on context and previous results."""
         
-        if tool_name == "DocumentETLTool":
+        # Map tool names to keys for consistent handling
+        tool_key = None
+        for key, name in self.tool_key_mapping.items():
+            if name == tool_name:
+                tool_key = key
+                break
+        
+        if tool_key == "etl":
             return {
                 "file_path": context.get("file_path"),
                 "topic_name": context.get("topic_name"),
@@ -172,7 +210,7 @@ class PipelineOrchestrator:
                 "original_filename": context.get("original_filename")
             }
         
-        elif tool_name == "BlueprintGenerationTool":
+        elif tool_key == "blueprint_gen":
             return {
                 "topic_name": context.get("topic_name"),
                 "source_data_ids": context.get("source_data_ids"),
@@ -181,17 +219,22 @@ class PipelineOrchestrator:
                 "embedding_func": context.get("embedding_func")
             }
         
-        elif tool_name == "GraphBuildTool":
+        elif tool_key == "graph_build":
             # Use results from previous tools
-            if "DocumentETLTool" in previous_results:
-                etl_result = previous_results["DocumentETLTool"]
-                source_data_id = etl_result.data.get("source_data_id")
+            source_data_id = None
+            blueprint_id = None
+            
+            # Check for results from DocumentETLTool
+            etl_tool_name = self.tool_key_mapping.get("etl")
+            if etl_tool_name and etl_tool_name in previous_results:
+                source_data_id = previous_results[etl_tool_name].data.get("source_data_id")
             else:
                 source_data_id = context.get("source_data_id")
             
-            if "BlueprintGenerationTool" in previous_results:
-                blueprint_result = previous_results["BlueprintGenerationTool"]
-                blueprint_id = blueprint_result.data.get("blueprint_id")
+            # Check for results from BlueprintGenerationTool
+            blueprint_tool_name = self.tool_key_mapping.get("blueprint_gen")
+            if blueprint_tool_name and blueprint_tool_name in previous_results:
+                blueprint_id = previous_results[blueprint_tool_name].data.get("blueprint_id")
             else:
                 blueprint_id = context.get("blueprint_id")
             
@@ -209,11 +252,18 @@ class PipelineOrchestrator:
         """Update context with results from a tool."""
         updated_context = context.copy()
         
-        if tool_name == "DocumentETLTool" and result.success:
+        # Map tool name to key
+        tool_key = None
+        for key, name in self.tool_key_mapping.items():
+            if name == tool_name:
+                tool_key = key
+                break
+        
+        if tool_key == "etl" and result.success:
             updated_context["source_data_id"] = result.data.get("source_data_id")
             updated_context["topic_name"] = result.metadata.get("topic_name")
         
-        elif tool_name == "BlueprintGenerationTool" and result.success:
+        elif tool_key == "blueprint_gen" and result.success:
             updated_context["blueprint_id"] = result.data.get("blueprint_id")
             updated_context["topic_name"] = result.metadata.get("topic_name")
         
@@ -248,3 +298,42 @@ class PipelineOrchestrator:
             context, 
             execution_id
         )
+    
+    def execute_with_process_strategy(self, request_data: Dict[str, Any], execution_id: Optional[str] = None) -> ToolResult:
+        """
+        Execute pipeline based on process strategy parameter from API request.
+        
+        Args:
+            request_data: API request data containing process_strategy (But process_strategy may not exist)
+            execution_id: Optional execution ID
+            
+        Returns:
+            ToolResult with execution results
+        """
+        execution_id = execution_id or str(uuid.uuid4())
+        
+        process_strategy = request_data.get("process_strategy", {})
+        target_type = request_data.get("target_type", "knowledge_graph")
+        metadata = request_data.get("metadata", {})
+        
+        # Explicit pipeline execution
+        if "pipeline" in process_strategy:
+            pipeline = process_strategy["pipeline"]
+            tools = [self.tool_key_mapping.get(tool_key, tool_key) for tool_key in pipeline]
+            return self.execute_custom_pipeline(tools, request_data, execution_id)
+        
+        # Default pipeline selection
+        topic_name = metadata.get("topic_name")
+        file_count = len(request_data.get("files", []))
+        is_new_topic = metadata.get("is_new_topic", False)
+        
+        # Determine input type and context
+        input_type = "dialogue" if target_type == "personal_memory" else "document"
+        if isinstance(request_data.get("input"), str) and not request_data.get("files"):
+            input_type = "text"
+        
+        pipeline_name = self.select_default_pipeline(
+            target_type, topic_name, file_count, is_new_topic, 
+            input_type=input_type
+        )
+        return self.execute_pipeline(pipeline_name, request_data, execution_id)
