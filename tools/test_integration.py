@@ -22,7 +22,7 @@ class TestPipelineIntegration(unittest.TestCase):
         
     def test_tool_registry_mapping(self):
         """Test that all tools are properly registered with correct keys."""
-        registry = ToolRegistry()
+        from tools.base import TOOL_REGISTRY
         
         # Test tool keys match design document
         expected_tools = {
@@ -32,7 +32,7 @@ class TestPipelineIntegration(unittest.TestCase):
         }
         
         for key, expected_name in expected_tools.items():
-            tool = registry.get_tool(expected_name)
+            tool = TOOL_REGISTRY.get_tool(expected_name)
             self.assertIsNotNone(tool, f"Tool {expected_name} should be registered")
             
     def test_orchestrator_pipeline_mapping(self):

@@ -205,7 +205,7 @@ class PipelineOrchestrator:
                 "file_path": context.get("file_path"),
                 "topic_name": context.get("topic_name"),
                 "metadata": context.get("metadata", {}),
-                "force_reprocess": context.get("force_reprocess", False),
+                "force_regenerate": context.get("force_regenerate", False),
                 "link": context.get("link"),
                 "original_filename": context.get("original_filename")
             }
@@ -220,31 +220,42 @@ class PipelineOrchestrator:
             }
         
         elif tool_key == "graph_build":
-            # Use results from previous tools
-            source_data_id = None
-            blueprint_id = None
-            
-            # Check for results from DocumentETLTool
-            etl_tool_name = self.tool_key_mapping.get("etl")
-            if etl_tool_name and etl_tool_name in previous_results:
-                source_data_id = previous_results[etl_tool_name].data.get("source_data_id")
+            # Handle both single document and batch processing modes
+            if "topic_name" in context and not ("source_data_id" in context and "blueprint_id" in context):
+                # Batch processing mode
+                return {
+                    "topic_name": context.get("topic_name"),
+                    "source_data_ids": context.get("source_data_ids"),
+                    "force_regenerate": context.get("force_regenerate", False),
+                    "llm_client": context.get("llm_client"),
+                    "embedding_func": context.get("embedding_func")
+                }
             else:
-                source_data_id = context.get("source_data_id")
-            
-            # Check for results from BlueprintGenerationTool
-            blueprint_tool_name = self.tool_key_mapping.get("blueprint_gen")
-            if blueprint_tool_name and blueprint_tool_name in previous_results:
-                blueprint_id = previous_results[blueprint_tool_name].data.get("blueprint_id")
-            else:
-                blueprint_id = context.get("blueprint_id")
-            
-            return {
-                "source_data_id": source_data_id,
-                "blueprint_id": blueprint_id,
-                "force_reprocess": context.get("force_reprocess", False),
-                "llm_client": context.get("llm_client"),
-                "embedding_func": context.get("embedding_func")
-            }
+                # Single document processing mode
+                source_data_id = None
+                blueprint_id = None
+                
+                # Check for results from DocumentETLTool
+                etl_tool_name = self.tool_key_mapping.get("etl")
+                if etl_tool_name and etl_tool_name in previous_results:
+                    source_data_id = previous_results[etl_tool_name].data.get("source_data_id")
+                else:
+                    source_data_id = context.get("source_data_id")
+                
+                # Check for results from BlueprintGenerationTool
+                blueprint_tool_name = self.tool_key_mapping.get("blueprint_gen")
+                if blueprint_tool_name and blueprint_tool_name in previous_results:
+                    blueprint_id = previous_results[blueprint_tool_name].data.get("blueprint_id")
+                else:
+                    blueprint_id = context.get("blueprint_id")
+                
+                return {
+                    "source_data_id": source_data_id,
+                    "blueprint_id": blueprint_id,
+                    "force_regenerate": context.get("force_regenerate", False),
+                    "llm_client": context.get("llm_client"),
+                    "embedding_func": context.get("embedding_func")
+                }
         
         return context.copy()
     
@@ -304,7 +315,7 @@ class PipelineOrchestrator:
         Execute pipeline based on process strategy parameter from API request.
         
         Args:
-            request_data: API request data containing process_strategy (But process_strategy may not exist)
+            request_data: API request data containing process_strategy
             execution_id: Optional execution ID
             
         Returns:

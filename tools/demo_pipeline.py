@@ -8,8 +8,13 @@ This script demonstrates the three main scenarios outlined in the design documen
 """
 
 import os
+import sys
 import tempfile
 from pathlib import Path
+
+# Add project root to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from tools.orchestrator import PipelineOrchestrator
 from tools.api_integration import PipelineAPIIntegration
 

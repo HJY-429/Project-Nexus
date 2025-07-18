@@ -150,7 +150,7 @@ class BlueprintGenerationTool(BaseTool):
             input_data: Dictionary containing:
                 - topic_name: Name of the topic to generate blueprint for
                 - source_data_ids: Optional list of specific source data IDs
-                - force_regenerate: Whether to force regeneration
+                - force_reprocess: Whether to force regeneration
                 - llm_client: LLM client instance (required)
                 - embedding_func: Embedding function (optional)
                 
@@ -198,7 +198,7 @@ class BlueprintGenerationTool(BaseTool):
                 version_input = "|".join(sorted([sd.content_version for sd in source_data_list]))
                 version_hash = hashlib.sha256(version_input.encode("utf-8")).hexdigest()
                 
-                # Check if blueprint is up-to-date (unless forcing regeneration)
+                # Check if blueprint is up-to-date (unless forcing regenerate)
                 if not force_regenerate:
                     existing_blueprint = db.query(AnalysisBlueprint).filter(
                         AnalysisBlueprint.topic_name == topic_name,

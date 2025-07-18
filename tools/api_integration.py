@@ -62,16 +62,28 @@ class PipelineAPIIntegration:
         Returns:
             Context dictionary for pipeline execution
         """
+        metadata = request_data.get("metadata", {})
+        
+        # Map SmartSave API parameters to tool system parameters
         context = {
             "target_type": request_data.get("target_type", "knowledge_graph"),
             "process_strategy": request_data.get("process_strategy", {}),
-            "metadata": request_data.get("metadata", {}),
+            "metadata": metadata,
             "files": files,
             "llm_client": request_data.get("llm_client"),
             "embedding_func": request_data.get("embedding_func"),
-            "force_reprocess": request_data.get("force_reprocess", False)
+            "force_reprocess": request_data.get("force_reprocess", False),
+            "topic_name": metadata.get("topic_name"),
+            "link": metadata.get("link"),
+            "database_uri": metadata.get("database_uri")
         }
         
+        # Handle file-specific parameters if files are provided
+        if files and len(files) == 1:
+            file_info = files[0]
+            context["file_path"] = file_info.get("path")
+            context["original_filename"] = file_info.get("filename")
+            
         return context
     
     def process_single_file(self, file_path: str, topic_name: str, metadata: Dict[str, Any] = None,
