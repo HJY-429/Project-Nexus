@@ -72,7 +72,7 @@ class PipelineAPIIntegration:
             "files": files,
             "llm_client": request_data.get("llm_client"),
             "embedding_func": request_data.get("embedding_func"),
-            "force_reprocess": request_data.get("force_reprocess", False),
+            "force_regenerate": request_data.get("force_regenerate", False),
             "topic_name": metadata.get("topic_name"),
             "link": metadata.get("link"),
             "database_uri": metadata.get("database_uri")
